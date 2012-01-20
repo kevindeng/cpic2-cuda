@@ -11,17 +11,37 @@ void dtimer(double *time, struct timeval *itime, int icntrl);
 
 int main(int argc, char *argv[]) 
 {
-    /* int indx =   3, indy =   1;    */
-    int indx =   6, indy =   7;
-    /* int indx =   7, indy =   8;    */
-    /* int indx =   8, indy =   9;    */
-    /* int npx =   48, npy =   12;    */
-    //   int npx =   384, npy =   768;
-    int npx =   768, npy =   1536; 
-    /* int npx =  1536, npy =   3072; */
-    int ndim = 2;
-    float tend = 65.0, dt = 0.1, qme = -1.0;
-    /* float tend = 65.0, dt = 0.025, qme = -1.0;        */
+    int indx = 6, indy = 7, npx = 48, npy = 12;
+    float tend = 65.0f, dt = 0.1f;
+    
+    // parse in parameters
+    if(argc == 7)
+    {
+        indx = atoi(argv[1]);
+        indy = atoi(argv[2]);
+        npx = atoi(argv[3]);
+        npy = atoi(argv[4]);
+        tend = atof(argv[5]);
+        dt = atof(argv[6]);
+        
+        if(!(indx && indy && npx && npy && tend && dt))
+        {
+            printf("One or more parameters are invalid.\n");
+            exit(1);
+        }
+    }
+    else if(argc != 1)
+    {
+        printf("Usage: %s indx indy npx npy tend dt\n", argv[0]);
+        exit(1);
+    }
+    else
+    {
+        printf("Using default parameters...\n");
+    }
+    
+    int ndim = 2; 
+    float qme = -1.0;
     float vtx = 1.0, vty = 1.0, vx0 = 0.0, vy0 = 0.0;
     float ax = .912871, ay = .912871;
     /* idimp = dimension of phase space = 4 */
