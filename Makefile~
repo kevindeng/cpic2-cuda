@@ -6,7 +6,7 @@ CCOPTS = -O3 -arch=sm_13
 
 all : cpic2
 
-cpic2 : cpic2.o cpush2.o dtimer.o cpush2cuda.o
+cpic2 : cpic2.o cpush2.o dtimer.o
 	$(CC) $(CCOPTS) -lm -o cpic2 cpic2.o cpush2.o dtimer.o cpush2cuda.o
 
 
