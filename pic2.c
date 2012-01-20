@@ -7,6 +7,10 @@
 #include <sys/time.h>
 #include "push2.h"
 
+#define TS {dtimer(&dtime,&itime,-1);}
+#define TE(A) {dtimer(&dtime,&itime,1);time=(float)dtime;A+=time;}
+#define TES(A) {TE(A);TS}
+
 void dtimer(double *time, struct timeval *itime, int icntrl);
 
 int main(int argc, char *argv[]) 
@@ -100,73 +104,78 @@ int main(int argc, char *argv[])
     goto L2000;
     /*    printf("ntime = %i\n",ntime); */
     
+    
+    
+    
     /* deposit charge with standard procedure: updates qe */
-    dtimer(&dtime,&itime,-1);
+    TS;
     for (j = 0; j < nxe*nye; j++) {
         qe[j] = 0.0;
     }
     cgpost2l(part,qe,qme,np,idimp,nxe,nye);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tdpost += time;
+    TES(tdpost);
+    
+    
+    
     /* add guard cells with standard procedure: updates qe */
-    dtimer(&dtime,&itime,-1);
     caguard2l(qe,nx,ny,nxe,nye);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tguard += time;
+    TES(tguard);
+    
+    
+    
     /* transform charge to fourier space with standard procedure: updates qe */
-    dtimer(&dtime,&itime,-1);
     isign = -1;
     cwfft2rx((float complex *)qe,isign,mixup,sct,indx,indy,nxeh,nye,
              nxhy,nxyh);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tfft += time;
+    TES(tfft);
+    
+    
+    
     /* calculate force/charge in fourier space with standard procedure: */
     /* updates fxye                                                     */
-    dtimer(&dtime,&itime,-1);
     isign = -1;
     cpois22((float complex *)qe,(float complex *)fxye,isign,ffc,ax,ay,
             affp,&we,nx,ny,nxeh,nye,nxh,nyh);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tfield += time;
+    TES(tfield);
+    
+    
+    
     /* transform force to real space with standard procedure: updates fxye */
-    dtimer(&dtime,&itime,-1);
     isign = 1;
     cwfft2r2((float complex *)fxye,isign,mixup,sct,indx,indy,nxeh,nye,
              nxhy,nxyh);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tfft += time;
+    TES(tfft);
+    
+    
+    
     /* copy guard cells with standard procedure: updates fxye */
-    dtimer(&dtime,&itime,-1);
     ccguard2l(fxye,nx,ny,nxe,nye);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tguard += time;
+    TES(tguard);
+    
+    
+    
     /* push particles with standard precision: updates part, wke */
     wke = 0.0;
-    dtimer(&dtime,&itime,-1);
     cgpush2l(part,fxye,qbme,dt,&wke,idimp,np,nx,ny,nxe,nye,ipbc);
-    dtimer(&dtime,&itime,1);
-    time = (float) dtime;
-    tpush += time;
+    TE(tpush);
+    
+    
+    
     /* sort particles by cell for standard code */
     if (sortime > 0) {
         if (ntime%sortime==0) {
-            dtimer(&dtime,&itime,-1);
+            TS;
             cdsortp2yl(part,part2,npicy,idimp,np,ny1);
             /* exchange pointers */
             tpart = part;
             part = part2;
             part2 = tpart;
-            dtimer(&dtime,&itime,1);
-            time = (float) dtime;
-            tsort += time;
+            TE(tsort);
         }
     }
+    
+    
+    
     if (ntime==0) {
         printf("Initial Field, Kinetic and Total Energies:\n");
         printf("%e %e %e\n",we,wke,wke+we);
