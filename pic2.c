@@ -6,10 +6,12 @@
 #include <complex.h>
 #include <sys/time.h>
 #include "push2.h"
+#include "push2cuda.h"
 
 #define TS {dtimer(&dtime,&itime,-1);}
 #define TE(A) {dtimer(&dtime,&itime,1);time=(float)dtime;A+=time;}
 #define TES(A) {TE(A);TS}
+#define VALIDATE 1
 
 void dtimer(double *time, struct timeval *itime, int icntrl);
 
@@ -97,6 +99,33 @@ int main(int argc, char *argv[])
             &we,nx,ny,nxeh,nye,nxh,nyh);
     /* initialize electrons */
     cdistr2(part,vtx,vty,vx0,vy0,npx,npy,idimp,np,nx,ny,ipbc);
+    
+    
+/* --------------------------------------------------------------------------*/
+/* ---------------------------- move data to GPU --------------------------- */
+/* --------------------------------------------------------------------------*/
+
+    int sz_qe = nxe * nye * sizeof(float);
+    int sz_part = idimp * np * sizeof(float);
+
+    float* g_part = (float*)copyToGPU(part, sz_part);
+    float* g_qe = (float*)copyToGPU(qe, sz_qe);
+    
+/* --------------------------------------------------------------------------*/
+    
+    if(VALIDATE)
+    {
+        float* t = (float*)copyFromGPU(g_part, sz_part);
+        if(floatArrayCompare(t, part, sz_part / sizeof(float), "copy", "orig", 0) != 0)
+        {
+            printf("Copying to and from GPU failed validation.\n");
+            exit(1);
+        }
+        free(t);
+    }
+    
+    
+    
     
     /* * * * start main iteration loop * * * */
     
@@ -208,5 +237,8 @@ int main(int argc, char *argv[])
     printf("Deposit Time (nsec) = %f\n",tdpost*wt);
     printf("Sort Time (nsec) = %f\n",tsort*wt);
     printf("Total Particle Time (nsec) = %f\n",time*wt);
+    
+    freeOnGPU(g_part);
+    freeOnGPU(g_qe);
     return 0;
 }
