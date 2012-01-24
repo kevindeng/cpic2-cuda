@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
     
     
 /* --------------------------------------------------------------------------*/
-/* ---------------------------- move data to GPU --------------------------- */
+/* ---------------------------- set up ------------------------------------- */
 /* --------------------------------------------------------------------------*/
 
     int sz_qe = nxe * nye * sizeof(float);
@@ -110,13 +110,16 @@ int main(int argc, char *argv[])
 
     float* g_part = (float*)copyToGPU(part, sz_part);
     float* g_qe = (float*)copyToGPU(qe, sz_qe);
+    int* mutexes = createMutexes(nxe * nye);
     
 /* --------------------------------------------------------------------------*/
     
     if(VALIDATE)
     {
         float* t = (float*)copyFromGPU(g_part, sz_part);
-        if(floatArrayCompare(t, part, sz_part / sizeof(float), "copy", "orig", 0) != 0)
+        float* t2 = (float*)copyFromGPU(g_qe, sz_qe);
+        if(floatArrayCompare(t, part, sz_part / sizeof(float), "copy", "orig", 0) != 0 ||
+           floatArrayCompare(t2, qe, sz_qe / sizeof(float), "copy", "orig", 0) !=0)
         {
             printf("Copying to and from GPU failed validation.\n");
             exit(1);
@@ -138,21 +141,44 @@ int main(int argc, char *argv[])
     
     /* deposit charge with standard procedure: updates qe */
     TS;
-    for (j = 0; j < nxe*nye; j++) {
+    cgpost2l_cuda(g_part, g_qe, qme, np, idimp, nxe, nye, npx, npy, mutexes);
+    TE(tdpost);
+    
+    for (j = 0; j < nxe*nye; j++)
         qe[j] = 0.0;
-    }
     cgpost2l(part,qe,qme,np,idimp,nxe,nye);
-    TES(tdpost);
     
-    
+    if(VALIDATE)
+    {
+        float* t = (float*)copyFromGPU(g_qe, sz_qe);
+        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-5) != 0)
+        {
+            printf("cgpost2l failed validation, ntime=%d\n", ntime);
+            exit(1);
+        }
+        free(t);
+    }
     
     /* add guard cells with standard procedure: updates qe */
+    TS;
+    caguard2l_cuda(g_qe,nx,ny,nxe,nye);
+    TE(tguard);
+    
     caguard2l(qe,nx,ny,nxe,nye);
-    TES(tguard);
     
-    
+    if(VALIDATE)
+    {
+        float* t = (float*)copyFromGPU(g_qe, sz_qe);
+        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-5) != 0)
+        {
+            printf("caguard2l failed validation, ntime=%d\n", ntime);
+            exit(1);
+        }
+        free(t);
+    }
     
     /* transform charge to fourier space with standard procedure: updates qe */
+    TS;
     isign = -1;
     cwfft2rx((float complex *)qe,isign,mixup,sct,indx,indy,nxeh,nye,
              nxhy,nxyh);

@@ -2,7 +2,7 @@
 
 CC = nvcc
 
-CCOPTS = -O3 -arch=sm_13
+CCOPTS = -O0 -arch=sm_20
 
 all : cpic2
 
