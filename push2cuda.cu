@@ -152,3 +152,112 @@ void caguard2l_cuda(float* q, int nx, int ny, int nxe, int nye)
 {
     k_caguard2l<<<nx + ny, 1>>>(q, nx, ny, nxe, nye);
 }
+
+
+
+/*---------------------------------------------------------------------------*/
+/*-------------------------------- cgpush2l --------------------------------*/
+/*---------------------------------------------------------------------------*/
+__global__ void k_cgpush2l(float* part, float* fxy, float qbm, float dt, float *ek,
+              int idimp, int nop, int nx, int ny, int nxv, int nyv,
+              int ipbc, int* mutex)
+{
+    int j, nn, mm, np, mp, nxv2;
+    float qtm, edgelx, edgely, edgerx, edgery, dxp, dyp, amx, amy;
+    float dx, dy, vx, vy;
+    double sum1;
+    nxv2 = 2*nxv;
+    qtm = qbm*dt;
+    sum1 = 0.0;
+    /* set boundary values */
+    edgelx = 0.0;
+    edgely = 0.0;
+    edgerx = (float) nx;
+    edgery = (float) ny;
+    if (ipbc==2) {
+        edgelx = 1.0;
+        edgely = 1.0;
+        edgerx = (float) (nx-1);
+        edgery = (float) (ny-1);
+    }
+    else if (ipbc==3) {
+        edgelx = 1.0;
+        edgerx = (float) (nx-1);
+    }
+
+    j = blockIdx.x + blockIdx.y * gridDim.x;
+    if(j < nop)
+    {
+    //for (j = 0; j < nop; j++) {
+    /* find interpolation weights */
+        nn = part[idimp*j];
+        mm = part[1+idimp*j];
+        dxp = part[idimp*j] - (float) nn;
+        dyp = part[1+idimp*j] - (float) mm;
+        nn = 2*nn;
+        mm = nxv2*mm;
+        amx = 1.0 - dxp;
+        mp = mm + nxv2;
+        amy = 1.0 - dyp;
+        np = nn + 2;
+    /* find acceleration */
+        dx = dyp*(dxp*fxy[np+mp] + amx*fxy[nn+mp])
+            + amy*(dxp*fxy[np+mm] + amx*fxy[nn+mm]);
+        dy = dyp*(dxp*fxy[1+np+mp] + amx*fxy[1+nn+mp])
+            + amy*(dxp*fxy[1+np+mm] + amx*fxy[1+nn+mm]);
+    /* new velocity */
+        vx = part[2+idimp*j];
+        vy = part[3+idimp*j];
+        dx = vx + qtm*dx;
+        dy = vy + qtm*dy;
+    /* average kinetic energy */
+        vx += dx;
+        vy += dy;
+        sum1 += vx*vx + vy*vy;
+        part[2+idimp*j] = dx;
+        part[3+idimp*j] = dy;
+    /* new position */
+        dx = part[idimp*j] + dx*dt;
+        dy = part[1+idimp*j] + dy*dt;
+    /* periodic boundary conditions */
+        if (ipbc==1) {
+            if (dx < edgelx) dx += edgerx;
+            if (dx >= edgerx) dx -= edgerx;
+            if (dy < edgely) dy += edgery;
+            if (dy >= edgery) dy -= edgery;
+        }
+    /* reflecting boundary conditions */
+        else if (ipbc==2) {
+            if ((dx < edgelx) || (dx >= edgerx)) {
+                dx = part[idimp*j];
+                part[2+idimp*j] = -part[2+idimp*j];
+            }
+            if ((dy < edgely) || (dy >= edgery)) {
+                dy = part[1+idimp*j];
+                part[3+idimp*j] = -part[3+idimp*j];
+            }
+        }
+    /* mixed reflecting/periodic boundary conditions */
+        else if (ipbc==3) {
+            if ((dx < edgelx) || (dx >= edgerx)) {
+                dx = part[idimp*j];
+                part[2+idimp*j] = -part[2+idimp*j];
+            }
+            if (dy < edgely) dy += edgery;
+            if (dy >= edgery) dy -= edgery;
+        }
+    /* set new position */
+        part[idimp*j] = dx;
+        part[1+idimp*j] = dy;
+    }
+    /* normalize kinetic energy */
+    syncAddFloat(ek, .125*sum1, mutex);
+}
+
+void cgpush2l_cuda(float part[], float fxy[], float qbm, float dt, float *ek,
+              int idimp, int nop, int nx, int ny, int nxv, int nyv,
+              int ipbc, int npx, int npy, int* mutex) 
+{                
+    dim3 grid(npx, npy);
+    k_cgpush2l<<<grid, 1>>>(part, fxy, qbm, dt, ek, idimp, nop, nx, ny, nxv, nyv, ipbc, mutex);
+}

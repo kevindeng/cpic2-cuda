@@ -11,7 +11,7 @@
 #define TS {dtimer(&dtime,&itime,-1);}
 #define TE(A) {dtimer(&dtime,&itime,1);time=(float)dtime;A+=time;}
 #define TES(A) {TE(A);TS}
-#define VALIDATE 1
+#define VALIDATE 0
 
 void dtimer(double *time, struct timeval *itime, int icntrl);
 
@@ -107,9 +107,12 @@ int main(int argc, char *argv[])
 
     int sz_qe = nxe * nye * sizeof(float);
     int sz_part = idimp * np * sizeof(float);
-
+    int sz_fxye = ndim*nxe*nye*sizeof(float);
+    
     float* g_part = (float*)copyToGPU(part, sz_part);
     float* g_qe = (float*)copyToGPU(qe, sz_qe);
+    float* g_fxye = (float*)copyToGPU(fxye, sz_fxye);
+    float* g_wke = (float*)copyToGPU(&wke, sizeof(float));
     int* mutexes = createMutexes(nxe * nye);
     
 /* --------------------------------------------------------------------------*/
@@ -151,13 +154,15 @@ int main(int argc, char *argv[])
     if(VALIDATE)
     {
         float* t = (float*)copyFromGPU(g_qe, sz_qe);
-        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-5) != 0)
+        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-4) != 0)
         {
             printf("cgpost2l failed validation, ntime=%d\n", ntime);
             exit(1);
         }
         free(t);
     }
+    
+    
     
     /* add guard cells with standard procedure: updates qe */
     TS;
@@ -169,7 +174,7 @@ int main(int argc, char *argv[])
     if(VALIDATE)
     {
         float* t = (float*)copyFromGPU(g_qe, sz_qe);
-        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-5) != 0)
+        if(floatArrayCompare(t, qe, sz_qe / sizeof(float), "gpu", "cpu", 1e-4) != 0)
         {
             printf("caguard2l failed validation, ntime=%d\n", ntime);
             exit(1);
@@ -177,44 +182,62 @@ int main(int argc, char *argv[])
         free(t);
     }
     
+    
+    
     /* transform charge to fourier space with standard procedure: updates qe */
     TS;
+    copyFromGPU2(qe, g_qe, sz_qe);
     isign = -1;
     cwfft2rx((float complex *)qe,isign,mixup,sct,indx,indy,nxeh,nye,
              nxhy,nxyh);
-    TES(tfft);
-    
-    
+    copyToGPU2(g_qe, qe, sz_qe);
+    TE(tfft);
     
     /* calculate force/charge in fourier space with standard procedure: */
     /* updates fxye                                                     */
+    TS;
     isign = -1;
     cpois22((float complex *)qe,(float complex *)fxye,isign,ffc,ax,ay,
             affp,&we,nx,ny,nxeh,nye,nxh,nyh);
-    TES(tfield);
+    TE(tfield);
     
     
     
     /* transform force to real space with standard procedure: updates fxye */
+    TS;
     isign = 1;
     cwfft2r2((float complex *)fxye,isign,mixup,sct,indx,indy,nxeh,nye,
              nxhy,nxyh);
-    TES(tfft);
+    TE(tfft);
     
     
     
     /* copy guard cells with standard procedure: updates fxye */
+    TS;
     ccguard2l(fxye,nx,ny,nxe,nye);
-    TES(tguard);
+    TE(tguard);
     
     
     
     /* push particles with standard precision: updates part, wke */
-    wke = 0.0;
-    cgpush2l(part,fxye,qbme,dt,&wke,idimp,np,nx,ny,nxe,nye,ipbc);
+    TS;
+    copyToGPU2(g_fxye, fxye, sz_fxye);
+    cgpush2l_cuda(g_part,g_fxye,qbme,dt,g_wke,idimp,np,nx,ny,nxe,nye,ipbc,npx,npy,mutexes);
     TE(tpush);
     
+    wke = 0.0;
+    cgpush2l(part,fxye,qbme,dt,&wke,idimp,np,nx,ny,nxe,nye,ipbc);
     
+    if(VALIDATE)
+    {
+        float* t = (float*)copyFromGPU(g_part, sz_part);
+        if(floatArrayCompare(t, part, sz_part / sizeof(float), "gpu", "cpu", 1e-4) != 0)
+        {
+            printf("cgpush2l failed sdfsdf validation, ntime=%d\n", ntime);
+            exit(1);
+        }
+        free(t);
+    }
     
     /* sort particles by cell for standard code */
     if (sortime > 0) {
@@ -225,6 +248,7 @@ int main(int argc, char *argv[])
             tpart = part;
             part = part2;
             part2 = tpart;
+            copyToGPU2(g_part, part, sz_part);
             TE(tsort);
         }
     }
@@ -266,5 +290,6 @@ int main(int argc, char *argv[])
     
     freeOnGPU(g_part);
     freeOnGPU(g_qe);
+    freeOnGPU(g_fxye);
     return 0;
 }

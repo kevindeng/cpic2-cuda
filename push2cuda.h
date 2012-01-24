@@ -13,3 +13,7 @@ void cgpost2l_cuda(float* part, float* q, float qm, int nop, int idimp,
             int nxv, int nyv, int npx, int npy, int* mutexes);
 
 void caguard2l_cuda(float* q, int nx, int ny, int nxe, int nye);
+
+void cgpush2l_cuda(float part[], float fxy[], float qbm, float dt, float *ek,
+              int idimp, int nop, int nx, int ny, int nxv, int nyv,
+              int ipbc, int npx, int npy, int* mutex);
